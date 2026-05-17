@@ -1,0 +1,15 @@
+[package]
+name = "codex-auth"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal CLI for managing multiple Codex ChatGPT OAuth accounts"
+license = "MIT"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "3"
+
+[dev-dependencies]
+tempfile = "3"
