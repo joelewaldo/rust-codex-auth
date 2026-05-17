@@ -22,6 +22,26 @@ pub fn save_active_snapshot(codex_home: &Path, info: &AuthInfo) -> Result<PathBu
     Ok(destination)
 }
 
+pub fn sync_active_snapshot(codex_home: &Path, info: &AuthInfo) -> Result<bool, StorageError> {
+    let source = active_auth_path(codex_home);
+    let source_bytes = fs::read(&source)?;
+    let dir = accounts_dir(codex_home);
+    ensure_private_dir(&dir)?;
+    let destination = dir.join(snapshot_file_name(info));
+    match fs::read(&destination) {
+        Ok(existing) if existing == source_bytes => Ok(false),
+        Ok(_) => {
+            write_private_file(&destination, &source_bytes)?;
+            Ok(true)
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            write_private_file(&destination, &source_bytes)?;
+            Ok(true)
+        }
+        Err(err) => Err(StorageError::Io(err)),
+    }
+}
+
 pub fn load_accounts(codex_home: &Path) -> Result<Vec<AccountSnapshot>, StorageError> {
     let dir = accounts_dir(codex_home);
     let mut accounts = Vec::new();

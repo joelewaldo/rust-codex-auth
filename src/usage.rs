@@ -34,7 +34,7 @@ pub struct UsageSnapshot {
     pub secondary: Option<UsageWindow>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UsageError {
     Http(u16),
     Transport(String),

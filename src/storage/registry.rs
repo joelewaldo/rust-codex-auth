@@ -41,10 +41,14 @@ pub fn sync_active_account(
     registry: &mut Registry,
 ) -> Result<bool, StorageError> {
     let Some(info) = active_info(codex_home)? else {
-        return Ok(false);
+        let active_key_changed = registry.active_account_key.take().is_some();
+        let activation_changed = registry.active_account_activated_at_ms.take().is_some();
+        let changed = active_key_changed || activation_changed;
+        return Ok(changed);
     };
     let key = info.record_key();
     let mut changed = upsert_account(registry, &info);
+    changed |= super::accounts::sync_active_snapshot(codex_home, &info)?;
     if registry.active_account_key.as_deref() != Some(key.as_str()) {
         registry.active_account_key = Some(key);
         registry.active_account_activated_at_ms = Some(now_millis());
@@ -77,6 +81,7 @@ pub fn upsert_account(registry: &mut Registry, info: &AuthInfo) -> bool {
         last_used_at: None,
         last_usage: None,
         last_usage_at: None,
+        last_usage_error: None,
         last_local_rollout: None,
     });
     registry.accounts.sort_by(account_record_order);

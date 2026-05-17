@@ -81,10 +81,11 @@ fn refresh_active_local_usage(codex_home: &Path, registry: &mut Registry) -> boo
         return changed;
     };
     if record.last_local_rollout.as_ref() == Some(&signature) {
-        return changed;
+        return changed || record.last_usage_error.take().is_some();
     }
     record.last_usage = Some(local.snapshot);
     record.last_usage_at = Some(now_seconds());
+    record.last_usage_error = None;
     record.last_local_rollout = Some(signature);
     true
 }

@@ -10,8 +10,7 @@ pub(super) fn ensure_private_dir(path: &Path) -> Result<(), io::Error> {
 }
 
 pub(super) fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
-    fs::write(path, bytes)?;
-    set_file_permissions(path)
+    write_file_with_mode(path, bytes, Some(0o600))
 }
 
 pub(super) fn write_preserving_existing_permissions(
@@ -24,18 +23,13 @@ pub(super) fn write_preserving_existing_permissions(
         metadata.permissions().mode() & 0o777
     });
 
-    fs::write(path, bytes)?;
-
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            path,
-            fs::Permissions::from_mode(existing_mode.unwrap_or(0o600)),
-        )?;
-    }
+    return write_file_with_mode(path, bytes, Some(existing_mode.unwrap_or(0o600)));
 
-    Ok(())
+    #[cfg(not(unix))]
+    {
+        fs::write(path, bytes)
+    }
 }
 
 #[cfg(unix)]
@@ -50,12 +44,25 @@ fn set_dir_permissions(_path: &Path) -> Result<(), io::Error> {
 }
 
 #[cfg(unix)]
-fn set_file_permissions(path: &Path) -> Result<(), io::Error> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+fn write_file_with_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> Result<(), io::Error> {
+    use std::{
+        fs::OpenOptions,
+        io::Write,
+        os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    };
+
+    let mode = mode.unwrap_or(0o600);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(mode)
+        .open(path)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    file.write_all(bytes)
 }
 
 #[cfg(not(unix))]
-fn set_file_permissions(_path: &Path) -> Result<(), io::Error> {
-    Ok(())
+fn write_file_with_mode(path: &Path, bytes: &[u8], _mode: Option<u32>) -> Result<(), io::Error> {
+    fs::write(path, bytes)
 }

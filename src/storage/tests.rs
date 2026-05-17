@@ -12,10 +12,15 @@ fn jwt(payload: serde_json::Value) -> String {
     format!("{header}.{payload}.sig")
 }
 
-fn auth_bytes(email: &str, user_id: &str, account_id: &str) -> Vec<u8> {
+fn auth_bytes_with_token(
+    email: &str,
+    user_id: &str,
+    account_id: &str,
+    access_token: &str,
+) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "tokens": {
-            "access_token": format!("access-{account_id}"),
+            "access_token": access_token,
             "account_id": account_id,
             "id_token": jwt(json!({
                 "email": email,
@@ -31,10 +36,26 @@ fn auth_bytes(email: &str, user_id: &str, account_id: &str) -> Vec<u8> {
 }
 
 fn write_active_auth(temp: &TempDir, email: &str, user_id: &str, account_id: &str) {
+    write_active_auth_with_token(
+        temp,
+        email,
+        user_id,
+        account_id,
+        &format!("access-{account_id}"),
+    );
+}
+
+fn write_active_auth_with_token(
+    temp: &TempDir,
+    email: &str,
+    user_id: &str,
+    account_id: &str,
+    access_token: &str,
+) {
     fs::create_dir_all(temp.path()).unwrap();
     fs::write(
         active_auth_path(temp.path()),
-        auth_bytes(email, user_id, account_id),
+        auth_bytes_with_token(email, user_id, account_id, access_token),
     )
     .unwrap();
 }
@@ -132,4 +153,43 @@ fn activating_snapshot_replaces_live_auth() {
 
     let active = crate::auth::parse_file(&active_auth_path(temp.path())).unwrap();
     assert_eq!(active.email, "first@example.com");
+}
+
+#[test]
+fn sync_active_account_creates_and_refreshes_managed_snapshot() {
+    let temp = TempDir::new().unwrap();
+    write_active_auth_with_token(&temp, "user@example.com", "user-1", "acct-1", "access-old");
+    let mut registry = load_registry(temp.path()).unwrap();
+
+    assert!(sync_active_account(temp.path(), &mut registry).unwrap());
+    assert_eq!(
+        load_snapshot_by_key(temp.path(), "user-1::acct-1")
+            .unwrap()
+            .info
+            .access_token,
+        "access-old"
+    );
+
+    write_active_auth_with_token(&temp, "user@example.com", "user-1", "acct-1", "access-new");
+
+    assert!(sync_active_account(temp.path(), &mut registry).unwrap());
+    assert_eq!(
+        load_snapshot_by_key(temp.path(), "user-1::acct-1")
+            .unwrap()
+            .info
+            .access_token,
+        "access-new"
+    );
+}
+
+#[test]
+fn sync_active_account_clears_active_state_without_live_auth() {
+    let temp = TempDir::new().unwrap();
+    write_active_auth(&temp, "user@example.com", "user-1", "acct-1");
+    let mut registry = load_registry(temp.path()).unwrap();
+    fs::remove_file(active_auth_path(temp.path())).unwrap();
+
+    assert!(sync_active_account(temp.path(), &mut registry).unwrap());
+    assert!(registry.active_account_key.is_none());
+    assert!(registry.active_account_activated_at_ms.is_none());
 }

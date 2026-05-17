@@ -21,7 +21,7 @@ use crate::{
 
 pub use accounts::{
     activate_account, active_key, load_accounts, load_snapshot_by_key, remove_active_auth,
-    remove_snapshot, save_active_snapshot,
+    remove_snapshot, save_active_snapshot, sync_active_snapshot,
 };
 pub use model::{AccountRecord, AccountSnapshot, Registry, RolloutSignature};
 pub use registry::{

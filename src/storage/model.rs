@@ -37,6 +37,8 @@ pub struct AccountRecord {
     pub last_used_at: Option<i64>,
     pub last_usage: Option<UsageSnapshot>,
     pub last_usage_at: Option<i64>,
+    #[serde(default)]
+    pub last_usage_error: Option<crate::usage::UsageError>,
     pub last_local_rollout: Option<RolloutSignature>,
 }
 

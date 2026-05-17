@@ -29,7 +29,7 @@ fn rows_surface_usage_errors() {
 
     assert_eq!(rows[0].five_hour, "HTTP 401");
     assert_eq!(rows[0].weekly, "HTTP 401");
-    assert!(!changed);
+    assert!(changed);
 }
 
 #[test]
@@ -133,6 +133,54 @@ fn active_local_usage_takes_precedence_over_remote_refresh() {
     assert_eq!(rows[0].plan, "plus");
     assert_eq!(rows[0].five_hour, "73%");
     assert_eq!(rows[0].weekly, "78%");
+    assert!(!changed);
+}
+
+#[test]
+fn local_usage_from_previous_activation_does_not_block_remote_refresh() {
+    let temp = tempfile::TempDir::new().unwrap();
+    save_account(&temp, "user@example.com", "user-1", "acct-1");
+    let mut registry = storage::load_registry(temp.path()).unwrap();
+    registry.active_account_activated_at_ms = Some(1_778_962_469_102);
+    registry.accounts[0].last_usage = Some(local_usage_snapshot());
+    registry.accounts[0].last_local_rollout = Some(storage::RolloutSignature {
+        path: "sessions/rollout-test.jsonl".to_string(),
+        event_timestamp_ms: 1_778_962_469_101,
+    });
+    let fetcher = FakeUsageFetcher {
+        results: HashMap::from([("user-1::acct-1".to_string(), Ok(usage_snapshot()))]),
+    };
+
+    let (rows, changed) = build_rows(
+        temp.path(),
+        &mut registry,
+        &fetcher,
+        RowUsageMode::RefreshDisplay,
+    );
+
+    assert_eq!(rows[0].plan, "team");
+    assert_eq!(rows[0].five_hour, "90%");
+    assert_eq!(rows[0].weekly, "80%");
+    assert!(changed);
+}
+
+#[test]
+fn same_minute_failed_refresh_is_reused() {
+    let temp = tempfile::TempDir::new().unwrap();
+    save_account(&temp, "user@example.com", "user-1", "acct-1");
+    let mut registry = storage::load_registry(temp.path()).unwrap();
+    registry.accounts[0].last_usage_at = Some(now_seconds());
+    registry.accounts[0].last_usage_error = Some(usage::UsageError::Http(401));
+
+    let (rows, changed) = build_rows(
+        temp.path(),
+        &mut registry,
+        &PanicUsageFetcher,
+        RowUsageMode::RefreshDisplay,
+    );
+
+    assert_eq!(rows[0].five_hour, "HTTP 401");
+    assert_eq!(rows[0].weekly, "HTTP 401");
     assert!(!changed);
 }
 

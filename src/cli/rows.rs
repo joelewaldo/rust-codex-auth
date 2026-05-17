@@ -35,7 +35,13 @@ pub(super) fn build_rows(
     let mut usage_results: Vec<Option<Result<UsageSnapshot, usage::UsageError>>> = registry
         .accounts
         .iter()
-        .map(|record| record.last_usage.clone().map(Ok))
+        .map(|record| {
+            record
+                .last_usage_error
+                .clone()
+                .map(Err)
+                .or_else(|| record.last_usage.clone().map(Ok))
+        })
         .collect();
 
     let mut changed = false;
@@ -62,16 +68,27 @@ pub(super) fn build_rows(
             }
         }
         for (index, result) in fetch_usage_concurrently(fetcher, pending) {
-            if let Ok(snapshot) = &result {
-                let record = &mut registry.accounts[index];
-                if record.last_usage.as_ref() != Some(snapshot) {
-                    record.last_usage = Some(snapshot.clone());
-                    changed = true;
+            let record = &mut registry.accounts[index];
+            match &result {
+                Ok(snapshot) => {
+                    if record.last_usage.as_ref() != Some(snapshot) {
+                        record.last_usage = Some(snapshot.clone());
+                        changed = true;
+                    }
+                    if record.last_usage_error.take().is_some() {
+                        changed = true;
+                    }
                 }
-                if record.last_usage_at != Some(refresh_started_at) {
-                    record.last_usage_at = Some(refresh_started_at);
-                    changed = true;
+                Err(err) => {
+                    if record.last_usage_error.as_ref() != Some(err) {
+                        record.last_usage_error = Some(err.clone());
+                        changed = true;
+                    }
                 }
+            }
+            if record.last_usage_at != Some(refresh_started_at) {
+                record.last_usage_at = Some(refresh_started_at);
+                changed = true;
             }
             usage_results[index] = Some(result);
         }
@@ -96,15 +113,16 @@ pub(super) fn build_rows(
 
 fn has_active_local_usage(registry: &Registry, record: &AccountRecord) -> bool {
     registry.active_account_key.as_deref() == Some(record.account_key.as_str())
-        && record.last_local_rollout.is_some()
+        && record.last_local_rollout.as_ref().is_some_and(|rollout| {
+            rollout.event_timestamp_ms >= registry.active_account_activated_at_ms.unwrap_or(0)
+        })
         && record.last_usage.is_some()
 }
 
 fn has_usage_from_same_minute(record: &AccountRecord, now_seconds: i64) -> bool {
-    record.last_usage.is_some()
-        && record
-            .last_usage_at
-            .is_some_and(|last_usage_at| last_usage_at / 60 == now_seconds / 60)
+    record
+        .last_usage_at
+        .is_some_and(|last_usage_at| last_usage_at / 60 == now_seconds / 60)
 }
 
 fn empty_usage_snapshot(record: &AccountRecord) -> UsageSnapshot {
